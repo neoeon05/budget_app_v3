@@ -325,7 +325,7 @@ def insert_record(user_id, record, created_by):
     log_audit(transaction_id, user_id, "CREATE", None, {
         'date': record[0], 'amount': record[1], 'purpose': record[2],
         'head': record[3], 'type': record[4]
-    })
+    }, conn=conn)
     
     conn.commit()
     conn.close()
@@ -342,7 +342,7 @@ def update_record(transaction_id, user_id, old_data, new_data, modified_by):
     )
     
     # Audit trail
-    log_audit(transaction_id, user_id, "UPDATE", old_data, new_data)
+    log_audit(transaction_id, user_id, "UPDATE", old_data, new_data, conn=conn)
     
     conn.commit()
     conn.close()
@@ -353,14 +353,17 @@ def delete_record(transaction_id, user_id, record_data):
     conn.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
     
     # Audit trail
-    log_audit(transaction_id, user_id, "DELETE", record_data, None)
+    log_audit(transaction_id, user_id, "DELETE", record_data, None, conn=conn)
     
     conn.commit()
     conn.close()
 
-def log_audit(transaction_id, user_id, action, old_data, new_data):
-    """Log an audit trail entry"""
-    conn = get_connection()
+def log_audit(transaction_id, user_id, action, old_data, new_data, conn=None):
+    """Log an audit trail entry. Accepts an existing connection to avoid locking."""
+    close_after = False
+    if conn is None:
+        conn = get_connection()
+        close_after = True
     conn.execute(
         """INSERT INTO audit_trail (transaction_id, user_id, action, old_data, new_data)
            VALUES (?, ?, ?, ?, ?)""",
@@ -368,8 +371,9 @@ def log_audit(transaction_id, user_id, action, old_data, new_data):
          json.dumps(old_data) if old_data else None,
          json.dumps(new_data) if new_data else None)
     )
-    conn.commit()
-    conn.close()
+    if close_after:
+        conn.commit()
+        conn.close()
 
 def get_audit_trail(user_id=None, limit=100):
     """Get audit trail records"""
